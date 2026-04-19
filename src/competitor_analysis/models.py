@@ -3,6 +3,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+
+
 class ProfileSummary(BaseModel):
     name: str
     niche: str
@@ -47,6 +49,10 @@ class CompetitorKPI(BaseModel):
     )
     active_since: str = "N/A"
     activities: str = "N/A"
+    social_links: dict[str, str] = Field(
+        default_factory=dict,
+        description="Platform -> profile URL extracted during KPI analysis",
+    )
 
 
 class CompetitorRow(BaseModel):
@@ -58,3 +64,19 @@ class CompetitorRow(BaseModel):
     website_and_links: list[str] = Field(default_factory=list)
     why_competitor: str
     kpis: CompetitorKPI
+
+
+class AnalysisRecordMeta(BaseModel):
+    id: str
+    created_at: str
+    input_url: str
+    profile_name: str
+    competitor_count: int
+
+
+class AnalysisRecord(BaseModel):
+    id: str
+    created_at: str
+    input_url: str
+    profile: ProfileSummary
+    rows: list[CompetitorRow]

@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import io
 import csv
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 
 import streamlit as st
+
+from competitor_analysis.models import AnalysisRecord, CompetitorRow
+from competitor_analysis.storage.history import save_analysis, load_analysis, list_analyses, delete_analysis
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -61,6 +65,39 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Session state ─────────────────────────────────────────────────────────────
+if "rows" not in st.session_state:
+    st.session_state.rows = []
+    st.session_state.profile = None
+    st.session_state.current_analysis_id = None
+
+# ── Sidebar – Cronologia ──────────────────────────────────────────────────────
+with st.sidebar:
+    st.title("📋 Cronologia")
+    st.divider()
+    metas = list_analyses()
+    if not metas:
+        st.caption("Nessuna analisi salvata.")
+    else:
+        for meta in metas:
+            c1, c2 = st.columns([5, 1])
+            with c1:
+                btn_label = f"**{meta.profile_name}**  \n{meta.created_at[:10]} · {meta.competitor_count} competitor"
+                if st.button(btn_label, key=f"load_{meta.id}", use_container_width=True):
+                    record = load_analysis(meta.id)
+                    st.session_state.rows = record.rows
+                    st.session_state.profile = record.profile
+                    st.session_state.current_analysis_id = meta.id
+                    st.rerun()
+            with c2:
+                if st.button("🗑", key=f"del_{meta.id}", help="Elimina questa analisi"):
+                    delete_analysis(meta.id)
+                    if st.session_state.current_analysis_id == meta.id:
+                        st.session_state.rows = []
+                        st.session_state.profile = None
+                        st.session_state.current_analysis_id = None
+                    st.rerun()
+
 # ── Header ────────────────────────────────────────────────────────────────────
 col_logo, col_title = st.columns([1, 8])
 with col_title:
@@ -94,9 +131,12 @@ if submitted:
 
     from competitor_analysis.scraper.profile import scrape_profile
     from competitor_analysis.analysis.competitor_finder import analyze_profile, find_competitors
-    from competitor_analysis.analysis.kpi_analyzer import gather_kpis
-    from competitor_analysis.output.export import export_csv, export_excel
-    from competitor_analysis.models import CompetitorRow
+    from competitor_analysis.analysis.kpi_analyzer import (
+        _gather_competitor_data,
+        _analyze_kpis,
+        _build_row,
+        CompetitorKPI,
+    )
 
     progress = st.progress(0, text="Starting…")
     status = st.empty()
@@ -109,7 +149,7 @@ if submitted:
 
         # Stage 2 – Claude profile analysis
         status.info("🤖 Analysing profile with Claude…")
-        profile = analyze_profile(raw_profile, profile_url.strip())
+        profile = analyze_profile(raw_profile, profile_url.strip(), use_cache=use_cache)
         progress.progress(35, text="Profile analysed")
 
         # Stage 3 – find competitors
@@ -119,17 +159,11 @@ if submitted:
         )
         progress.progress(60, text=f"Found {len(candidates)} candidates")
 
-        # Stage 4 – gather KPIs (we update progress per competitor)
+        # Stage 4 – gather KPIs
         status.info("📊 Gathering KPIs for each competitor…")
         rows: list[CompetitorRow] = []
 
         for i, candidate in enumerate(candidates):
-            from competitor_analysis.analysis.kpi_analyzer import (
-                _gather_competitor_data,
-                _analyze_kpis,
-                _build_row,
-                CompetitorKPI,
-            )
             try:
                 raw_data = _gather_competitor_data(candidate, use_cache=use_cache, verbose=False)
                 kpis = _analyze_kpis(candidate, raw_data, profile)
@@ -143,11 +177,31 @@ if submitted:
         progress.progress(100, text="Done!")
         status.success(f"✅ Analysis complete — {len(rows)} competitors found")
 
+        # Save to history
+        url_slug = profile_url.strip().rstrip("/").split("/")[-1][:30]
+        record_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{url_slug}"
+        record = AnalysisRecord(
+            id=record_id,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            input_url=profile_url.strip(),
+            profile=profile,
+            rows=rows,
+        )
+        save_analysis(record)
+        st.session_state.rows = rows
+        st.session_state.profile = profile
+        st.session_state.current_analysis_id = record_id
+
     except Exception as exc:
         progress.empty()
         status.empty()
         st.error(f"Something went wrong: {exc}")
         st.stop()
+
+# ── Results (new analysis or loaded from history) ─────────────────────────────
+if st.session_state.rows:
+    profile = st.session_state.profile
+    rows = st.session_state.rows
 
     # ── Profile summary card ──────────────────────────────────────────────────
     st.subheader("Profile summary")
@@ -223,9 +277,10 @@ if submitted:
     st.subheader("Download results")
     dl1, dl2 = st.columns(2)
 
+    from competitor_analysis.output.export import _flatten, export_excel
+
     # CSV
     csv_buf = io.StringIO()
-    from competitor_analysis.output.export import _flatten
     flat_rows = [_flatten(r) for r in rows]
     writer = csv.DictWriter(csv_buf, fieldnames=list(flat_rows[0].keys()))
     writer.writeheader()
@@ -257,5 +312,5 @@ if submitted:
         )
 
 # ── Empty state ───────────────────────────────────────────────────────────────
-else:
+elif not submitted:
     st.info("👆 Enter a social media profile URL above and click **Analyze** to get started.")

@@ -101,6 +101,7 @@ Return a JSON object with exactly these fields:
 - structure (dict[str,bool]): Whether they have each of: website, landing_page, ebook, freebie, multi_platform
 - active_since (str): When they started (year or date string), or "N/A"
 - activities (str): Brief description of their main content/activities (1-2 sentences)
+- social_links (dict[str,str]): Platform name (lowercase) -> full profile URL for each platform you can confirm. Only include platforms where you found an actual URL. Example: {{"instagram": "https://www.instagram.com/username/", "linkedin": "https://www.linkedin.com/in/username/"}}
 
 Return only a JSON object.
 """
@@ -126,11 +127,15 @@ Return only a JSON object.
         structure=data.get("structure", {}),
         active_since=data.get("active_since", "N/A"),
         activities=data.get("activities", "N/A"),
+        social_links={k: v for k, v in data.get("social_links", {}).items() if v},
     )
 
 
 def _build_row(candidate: CompetitorCandidate, kpis: CompetitorKPI) -> CompetitorRow:
-    links = list(candidate.social_links.values())
+    # KPI call has richer context; candidate.social_links takes precedence where it has data
+    merged_social = {**kpis.social_links, **{k: v for k, v in candidate.social_links.items() if v}}
+
+    links = list(merged_social.values())
     if candidate.website and candidate.website not in links:
         links.insert(0, candidate.website)
 
@@ -139,7 +144,7 @@ def _build_row(candidate: CompetitorCandidate, kpis: CompetitorKPI) -> Competito
         description=candidate.description,
         activities=kpis.activities,
         active_since=kpis.active_since,
-        social_profiles=candidate.social_links,
+        social_profiles=merged_social,
         website_and_links=links,
         why_competitor=candidate.relevance_reason,
         kpis=kpis,

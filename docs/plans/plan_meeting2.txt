@@ -1,0 +1,135 @@
+ Plan: Fix the 3 Competitor-Analysis Bugs (Meeting 2)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            Context                                                                                                                                                                                                                                                        
+
+ Client Sid (Kolif Agency, IG: @sid_consulentemarketing) reported three defects after testing the MVP:
+
+ 1. Wrong competitor identification — Claude returns generic SME marketing consultants (Bertuol, Severgnini, Ingala, Marabini) instead of the true niche (marketing per coach e counselor). True competitors like Federico Ferrarelli, Ivano Peggion, and       
+ Francesco Conte are never surfaced.
+ 2. "Social profiles" UI field renders empty even when follower counts are populated.
+ 3. No persistence — closing the app / losing connection wipes the entire analysis; no history exists.
+
+ The goal is to fully resolve all three, tackled from simplest to hardest so each fix is shippable and testable before moving on.
+
+ ---
+ Root-cause summary (from exploration)
+
+ ┌─────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ Bug │                                                                                                                     Root cause                                                                                                                     │   
+ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤   
+ │ 2   │ social_profiles comes from the finder Claude call (candidate.social_links) which Claude often returns as {}. The KPI call forcibly seeds follower_count with "N/A" defaults → followers always render, socials don't. Asymmetric fallback.         │   
+ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤   
+ │ 3   │ app.py uses zero st.session_state, no DB, no output persistence. Results exist only inside the if submitted: branch. Only existing cache (.cache/search/) is SerpAPI-query-level, not analysis-level.                                              │   
+ ├─────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤   
+ │ 1   │ scrape_profile in src/competitor_analysis/scraper/profile.py uses plain httpx — Instagram returns a login wall, so RawProfile is empty. analyze_profile then leans on Claude's training knowledge → imprecise niche inference → imprecise search   │   
+ │     │ queries in _build_search_queries → imprecise candidates → no post-filter in find_competitors. Whole chain is lossy.                                                                                                                                │   
+ └─────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘   
+
+ ---
+ Fix 1 — Bug 2: Social profiles render empty (simplest)
+
+ Files to modify:
+ - src/competitor_analysis/analysis/kpi_analyzer.py
+ - src/competitor_analysis/models.py (possibly)
+
+ Changes:
+ 1. Extend the KPI prompt (kpi_analyzer.py:91-106) to also return a social_links: dict[str, str] field alongside follower_count and structure. Claude is already scraping the profile URL + running a SerpAPI query, so the URLs are in-context.
+ 2. Add social_links to CompetitorKPI (models.py:33-49) with default_factory=dict.
+ 3. In _build_row (kpi_analyzer.py:133-143), merge with candidate.social_links taking precedence (finder is usually wrong/empty; KPI call has better context):
+ merged_social = {**kpi.social_links, **{k: v for k, v in candidate.social_links.items() if v}}
+ 4. In _social_links_md (app.py:175-179), nothing changes — it will now have data to render.
+
+ Why this is first: pure prompt + model edit, no new deps, no UI restructure, ~30 LOC.
+
+ Verification:
+ - Re-run analysis on @sid_consulentemarketing. For each competitor card, confirm the "Social profiles" row shows ≥1 platform link, never just — when followers exist.
+ - Spot-check: IG links in the card point to the actual competitor's profile, not the client's.
+
+ ---
+ Fix 2 — Bug 3: Persistence & history (medium)
+
+ Files to create/modify:
+ - NEW: src/competitor_analysis/storage/history.py
+ - app.py — add a sidebar "History" section and wire saves into the submit flow
+ - src/competitor_analysis/models.py — add AnalysisRecord wrapper model
+
+ Design (JSON-per-analysis, reusing the .cache/search/ pattern from search.py:15-49):
+ 1. Storage dir: <repo>/.cache/history/ — one JSON file per analysis, filename {timestamp}_{url_slug}.json.
+ 2. AnalysisRecord Pydantic model containing: id, created_at, input_url, profile: ProfileSummary, rows: list[CompetitorRow]. Serialize via .model_dump(), deserialize via .model_validate().
+ 3. history.py exposes: save_analysis(record) -> str, load_analysis(id) -> AnalysisRecord, list_analyses() -> list[AnalysisRecordMeta], delete_analysis(id) -> None.
+ 4. app.py changes:
+   - After analyze(...) succeeds, call save_analysis(...); keep st.session_state["current_analysis_id"] so reruns don't re-save.
+   - Sidebar: st.sidebar.title("Cronologia") → list recent analyses (newest first), clicking loads the record into st.session_state["loaded_record"] and re-renders the cards without calling any Claude API.
+   - Add a "🗑" button per row to delete.
+   - On submitted, prefer the freshly-computed rows; otherwise render loaded_record.rows if present; otherwise the empty-state message at app.py:260-261.
+
+ Reused utilities:
+ - _save_cache / _load_cache / _cache_path pattern from src/competitor_analysis/scraper/search.py:20-49 — mirror the structure (MD5 not needed here since URL slug + timestamp is fine).
+ - _flatten / export_excel from src/competitor_analysis/output/export.py already work with CompetitorRow[] — "Export Excel" button can operate on loaded history records unchanged.
+
+ Why this is second: touches more files than Fix 1 but is a pure additive feature — no changes to the analysis pipeline or prompts.
+
+ Verification:
+ - Run an analysis → confirm a JSON file appears in .cache/history/.
+ - Hard-reload the Streamlit page → sidebar shows the prior analysis; clicking it re-renders all cards without any Claude API spend (watch logs / _call_claude stays silent).
+ - Kill streamlit run mid-session, restart → history persists.
+ - Delete button removes the file and the sidebar entry.
+
+ ---
+ Fix 3 — Bug 1: Correct competitor identification (hardest)
+
+ Files to modify:
+ - src/competitor_analysis/scraper/profile.py — add headless-browser fallback
+ - src/competitor_analysis/analysis/competitor_finder.py — retune queries, add post-filter
+ - requirements.txt / pyproject.toml — add playwright (+ playwright install chromium note)
+
+ Changes:
+
+ A. Scraping upgrade (profile.py):
+ 1. Keep the fast httpx path as the primary.
+ 2. On empty / login-wall response (detect "Accedi" / "Log in" / empty og:description), fall back to a Playwright headless-chromium fetch with Italian locale, realistic viewport, and explicit wait for meta[property="og:description"]. Instagram's
+ og:description meta tag exposes the bio + follower count without login for public profiles.
+ 3. Also extract the handle's public JSON surface when available (window._sharedData or <script type="application/ld+json">).
+ 4. Extend RawProfile (models.py) with a bio: str field populated from og:description — this is the highest-signal text Claude will see.
+
+ B. Search-query retuning (competitor_finder.py:165-184):
+ 1. Replace generic templates (f"agenzia marketing {audience_short} {geo}") with niche-specific ones that preserve micro-niche tokens unchanged:
+   - f'"{profile.niche}" Instagram Italia'
+   - f"marketing per {profile.target_audience} Italia"
+   - f"consulente social media {profile.target_audience}"
+   - f'"coach" OR "counselor" marketing consulente Italia' (only when niche contains "coach"/"counselor" tokens)
+ 2. Add a token-extraction helper that pulls 2-3 salient micro-niche words from profile.niche (e.g. "coach", "counselor") and mandates they appear in at least one query.
+
+ C. Candidate post-filter / re-rank (new function in competitor_finder.py, called from find_competitors after the existing Claude call, before return):
+ 1. For each candidate, issue a lightweight per-candidate verification Claude call: given the client's niche + audience + the candidate's description/primary_url, return { "is_direct_competitor": bool, "confidence": 0-1, "reason": str }.
+ 2. Drop any candidate with is_direct_competitor == false or confidence < 0.6.
+ 3. Sort survivors by confidence descending.
+ 4. Cache verifications in .cache/verify/ using the same pattern so re-runs are cheap.
+
+                      
+     C. Candidate post-filter / re-rank (new function in competitor_finder.py, called from find_competitors after the existing Claude call, before return):
+     1. For each candidate, issue a lightweight per-candidate verification Claude call: given the client's niche + audience + the candidate's description/primary_url, return { "is_direct_competitor": bool, "confidence": 0-1, "reason": str }.
+     2. Drop any candidate with is_direct_competitor == false or confidence < 0.6.
+     3. Sort survivors by confidence descending.                                                                                                                  
+     4. Cache verifications in .cache/verify/ using the same pattern so re-runs are cheap.
+ 
+     D. Prompt tightening (competitor_finder.py:126-151):
+     1. Add a "REJECTION CRITERIA" section to the main prompt spelling out what is NOT a direct competitor — e.g. "a consultant for generic SMEs (PMI) is NOT a direct competitor even if they work in marketing".
+     2. Add 2-3 few-shot positive examples (Ferrarelli, Peggion, Conte) and 2-3 negatives (Bertuol, Ingala) conditional on niche containing "coach" or "counselor", so they don't bias unrelated niches.
+                                                                                                             
+     Why this is third: highest-risk, most surface area, requires new dependency (Playwright) and infrastructure (browser binary). Worth validating fixes 1 & 2 first.
+                                                                                          
+     Verification:
+     - Run on @sid_consulentemarketing. Assert:
+       - Result list contains at least 1 of: Ferrarelli / Peggion / Conte.
+       - Result list contains 0 of: Bertuol / Ingala / Marabini. (Severgnini is borderline; acceptable either way.)
+     - Run on a second test profile (different niche) to confirm we haven't over-fit to the coach/counselor case.
+     - scrape_profile("https://www.instagram.com/sid_consulentemarketing/") returns a non-empty RawProfile.bio containing recognizable tokens.
+     - Confirm .cache/verify/ fills up on first run and is hit on rerun (no new Claude calls).                                    
+
+     ---                                                                
+     Execution order & checkpoints                                                                                                                                                                                                                              
+
+     1. Fix 1 (Bug 2) → manual test → commit.
+     2. Fix 2 (Bug 3) → manual test incl. reload → commit.
+     3. Fix 3 (Bug 1) → this is itself a sub-sequence: A → B → D → C, each validated independently before stacking. Commit after each sub-step.
+                                 
+     Keep pytest tests/ green at each step — no existing tests should break.
