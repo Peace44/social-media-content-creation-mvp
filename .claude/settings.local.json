@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip3 --version)",
+      "Bash(uv --version)",
+      "Bash(uv init:*)",
+      "Bash(uv add:*)",
+      "Bash(uv run:*)",
+      "Bash(curl -s http://localhost:8501/healthz)",
+      "Bash(kill %1)",
+      "Bash(uv export:*)",
+      "Bash(python *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ]
+  }
+}
