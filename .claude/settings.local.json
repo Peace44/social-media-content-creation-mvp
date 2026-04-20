@@ -19,7 +19,10 @@
       "Bash(.venv/bin/streamlit run *)",
       "Bash(python3 *)",
       "Bash(.venv/bin/uv add *)",
-      "Bash(.venv/bin/playwright install *)"
+      "Bash(.venv/bin/playwright install *)",
+      "Bash(fuser -k 8501/tcp)",
+      "Bash(nohup .venv/bin/streamlit run app.py --server.headless true)",
+      "Read(//tmp/**)"
     ]
   }
 }

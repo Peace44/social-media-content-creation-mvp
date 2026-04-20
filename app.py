@@ -244,12 +244,9 @@ if st.session_state.rows:
                 st.write("**Relevant meta tags:**")
                 st.json(debug["meta_tags_subset"])
 
-            if debug["enrichment_snippets"]:
-                st.write("**SerpAPI enrichment snippets:**")
-                for r in debug["enrichment_snippets"]:
-                    st.markdown(f"- **{r.title}** — [{r.url}]({r.url})  \n  {r.snippet}")
-            elif debug["sparse_data"]:
-                st.warning("Sparse data triggered but no SerpAPI snippets were returned.")
+            if st.session_state.raw_profile and st.session_state.raw_profile.extra_data:
+                st.write("**Structured data extracted:**")
+                st.json(st.session_state.raw_profile.extra_data)
 
             if debug["visible_text_preview"]:
                 st.write("**Visible page text (first 500 chars):**")

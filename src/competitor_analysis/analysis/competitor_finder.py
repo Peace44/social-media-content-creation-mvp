@@ -70,9 +70,6 @@ _GENERIC_DESC_PHRASES = (
 
 def _is_sparse(raw: RawProfile) -> bool:
     """Return True when the scraped profile data is too thin to be useful."""
-    if raw.platform == "Instagram":
-        # Instagram never serves a reliable bio without JS rendering
-        return True
     desc = raw.description.strip()
     if not desc or len(desc) < 40:
         return True
