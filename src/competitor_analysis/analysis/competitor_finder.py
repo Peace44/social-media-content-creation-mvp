@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -83,7 +84,9 @@ def _call_claude(system: str, user: str, retries: int = 3, verbose: bool = False
 def _enrich_profile_from_search(profile_url: str, use_cache: bool, verbose: bool) -> str:
     """Run a targeted SerpAPI query to recover bio info blocked by Instagram."""
     handle = profile_url.rstrip("/").split("/")[-1]
-    query = f'"{handle}" instagram marketing Italia'
+    # Include the handle tokens as keywords to surface niche-specific results
+    handle_keywords = " ".join(w for w in re.split(r"[._\-]", handle) if len(w) > 2)
+    query = f'"{handle}" instagram {handle_keywords} Italia'
     results = search(query, use_cache=use_cache, verbose=verbose)
     if not results:
         return ""
@@ -100,11 +103,21 @@ def analyze_profile(
     """Use Claude to extract structured profile info from scraped data."""
     extra_context = ""
 
-    # Step A: if Instagram returned an empty/login-wall page, enrich via SerpAPI
-    is_instagram = "instagram.com" in profile_url.lower()
-    scraping_blocked = is_instagram and not raw.description.strip()
-    if scraping_blocked:
+    # Step A: if scraping returned sparse data, enrich via SerpAPI
+    sparse_data = not raw.description.strip()
+    if sparse_data:
         extra_context = _enrich_profile_from_search(profile_url, use_cache=use_cache, verbose=verbose)
+
+    # Extract handle/slug from URL as a niche signal when page content is unavailable
+    handle = profile_url.rstrip("/").split("/")[-1]
+    handle_hint = (
+        f"\nCRITICAL: The username/handle in the URL is '{handle}'. "
+        "Extract every meaningful word from it and use them as the primary signals "
+        "to determine 'niche' and 'target_audience'. "
+        "Do NOT override or ignore these signals with generic labels — the handle is "
+        "the most reliable data point when the page content is unavailable.\n"
+        if sparse_data else ""
+    )
 
     user_prompt = f"""\
 Analyze this social media profile and return a JSON object with these fields:
@@ -124,7 +137,7 @@ Profile data:
 {raw.to_text()}
 
 Also consider: the profile URL is {profile_url}
-{extra_context}
+{handle_hint}{extra_context}
 If the scraped data is sparse (e.g. Instagram blocked scraping), use your knowledge of this profile.
 Return only a JSON object.
 """
