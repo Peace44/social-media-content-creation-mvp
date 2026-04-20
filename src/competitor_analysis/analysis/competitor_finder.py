@@ -81,17 +81,60 @@ def _call_claude(system: str, user: str, retries: int = 3, verbose: bool = False
 
 # ── Step A: profile enrichment via SerpAPI when scraping is blocked ───────────
 
-def _enrich_profile_from_search(profile_url: str, use_cache: bool, verbose: bool) -> str:
-    """Run a targeted SerpAPI query to recover bio info blocked by Instagram."""
+_GENERIC_DESC_PHRASES = (
+    "instagram photos and videos",
+    "see instagram photos",
+    "log in to",
+    "sign up to see",
+)
+
+
+def _is_sparse(raw: RawProfile) -> bool:
+    """Return True when the scraped profile data is too thin to be useful."""
+    if raw.platform == "Instagram":
+        # Instagram never serves a reliable bio without JS rendering
+        return True
+    desc = raw.description.strip()
+    if not desc or len(desc) < 40:
+        return True
+    desc_lower = desc.lower()
+    return any(phrase in desc_lower for phrase in _GENERIC_DESC_PHRASES)
+
+
+def _enrich_profile_from_search(
+    profile_url: str, use_cache: bool, verbose: bool
+) -> tuple[str, list]:
+    """Run targeted SerpAPI queries to recover bio info when direct scraping fails.
+
+    Returns (formatted_context_str, raw_results_list).
+    """
+    from competitor_analysis.models import SearchResult
+
     handle = profile_url.rstrip("/").split("/")[-1]
-    # Include the handle tokens as keywords to surface niche-specific results
     handle_keywords = " ".join(w for w in re.split(r"[._\-]", handle) if len(w) > 2)
-    query = f'"{handle}" instagram {handle_keywords} Italia'
-    results = search(query, use_cache=use_cache, verbose=verbose)
-    if not results:
-        return ""
-    snippets = "\n".join(f"- {r.title}: {r.snippet}" for r in results[:5])
-    return f"\nAdditional search context (from Google, used because direct scraping was blocked):\n{snippets}"
+
+    query_a = f'"{handle}" instagram {handle_keywords} Italia'
+    query_b = f"site:instagram.com {handle}"
+
+    results_a = search(query_a, use_cache=use_cache, verbose=verbose)
+    results_b = search(query_b, use_cache=use_cache, verbose=verbose)
+
+    # Merge, deduplicated by URL
+    seen: set[str] = set()
+    merged: list[SearchResult] = []
+    for r in results_a + results_b:
+        if r.url not in seen:
+            seen.add(r.url)
+            merged.append(r)
+
+    if not merged:
+        return "", []
+
+    snippets = "\n".join(
+        f"- {r.title} ({r.url}): {r.snippet}" for r in merged[:8]
+    )
+    context = f"\nAdditional search context (from Google, used because direct scraping was blocked):\n{snippets}"
+    return context, merged[:8]
 
 
 def analyze_profile(
@@ -99,14 +142,20 @@ def analyze_profile(
     profile_url: str,
     verbose: bool = False,
     use_cache: bool = True,
-) -> ProfileSummary:
-    """Use Claude to extract structured profile info from scraped data."""
-    extra_context = ""
+) -> tuple[ProfileSummary, dict]:
+    """Use Claude to extract structured profile info from scraped data.
 
-    # Step A: if scraping returned sparse data, enrich via SerpAPI
-    sparse_data = not raw.description.strip()
+    Returns (ProfileSummary, debug_info_dict).
+    """
+    extra_context = ""
+    enrichment_snippets: list = []
+
+    # Step A: enrich via SerpAPI when scraping is unreliable
+    sparse_data = _is_sparse(raw)
     if sparse_data:
-        extra_context = _enrich_profile_from_search(profile_url, use_cache=use_cache, verbose=verbose)
+        extra_context, enrichment_snippets = _enrich_profile_from_search(
+            profile_url, use_cache=use_cache, verbose=verbose
+        )
 
     # Extract handle/slug from URL as a niche signal when page content is unavailable
     handle = profile_url.rstrip("/").split("/")[-1]
@@ -115,9 +164,27 @@ def analyze_profile(
         "Extract every meaningful word from it and use them as the primary signals "
         "to determine 'niche' and 'target_audience'. "
         "Do NOT override or ignore these signals with generic labels — the handle is "
-        "the most reliable data point when the page content is unavailable.\n"
+        "the most reliable data point when the page content is unavailable. "
+        "Do NOT invent facts that are not present in the provided data.\n"
         if sparse_data else ""
     )
+
+    # Build debug payload before calling Claude
+    _META_KEYS = ("description", "title", "og:", "twitter:")
+    meta_subset = {
+        k: v for k, v in raw.meta_tags.items()
+        if any(k.lower().startswith(p) or p in k.lower() for p in _META_KEYS)
+    }
+    debug_info: dict = {
+        "sparse_data": sparse_data,
+        "platform": raw.platform,
+        "scraped_description": raw.description,
+        "meta_tags_subset": meta_subset,
+        "visible_text_preview": raw.visible_text[:500],
+        "enrichment_query_used": bool(extra_context),
+        "enrichment_snippets": enrichment_snippets,
+        "handle_hint_triggered": bool(handle_hint),
+    }
 
     user_prompt = f"""\
 Analyze this social media profile and return a JSON object with these fields:
@@ -138,7 +205,8 @@ Profile data:
 
 Also consider: the profile URL is {profile_url}
 {handle_hint}{extra_context}
-If the scraped data is sparse (e.g. Instagram blocked scraping), use your knowledge of this profile.
+Base your answer strictly on the Profile data and Additional search context above. \
+If a field cannot be determined from those sources, return an empty string or empty list — do not guess.
 Return only a JSON object.
 """
     raw_response = _call_claude(_PROFILE_SYSTEM, user_prompt, verbose=verbose)
@@ -151,7 +219,7 @@ Return only a JSON object.
         cleaned = cleaned.strip()
 
     data = json.loads(cleaned)
-    return ProfileSummary(**data)
+    return ProfileSummary(**data), debug_info
 
 
 # ── Step B: niche-aware search query builder ──────────────────────────────────

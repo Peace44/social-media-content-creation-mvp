@@ -92,6 +92,25 @@ def search(query: str, use_cache: bool = True, verbose: bool = False) -> list[Se
         if item.get("link")
     ]
 
+    # Prepend high-signal structured results (often contain real bios for social profiles)
+    prefix: list[SearchResult] = []
+    kg = data.get("knowledge_graph", {})
+    if kg.get("description"):
+        prefix.append(SearchResult(
+            title=f"[KG] {kg.get('title', '')}",
+            url=kg.get("website") or kg.get("source", {}).get("link", ""),
+            snippet=kg["description"],
+        ))
+    ab = data.get("answer_box", {})
+    ab_snippet = ab.get("snippet") or ab.get("answer", "")
+    if ab_snippet:
+        prefix.append(SearchResult(
+            title=f"[AnswerBox] {ab.get('title', '')}",
+            url=ab.get("link", ""),
+            snippet=ab_snippet,
+        ))
+    results = prefix + results
+
     if verbose:
         console.print(f"  [dim]SerpAPI: {len(results)} results for: {query}[/dim]")
 

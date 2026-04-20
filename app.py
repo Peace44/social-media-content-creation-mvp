@@ -70,6 +70,8 @@ if "rows" not in st.session_state:
     st.session_state.rows = []
     st.session_state.profile = None
     st.session_state.current_analysis_id = None
+    st.session_state.profile_debug = None
+    st.session_state.raw_profile = None
 
 # ── Sidebar – Cronologia ──────────────────────────────────────────────────────
 with st.sidebar:
@@ -88,6 +90,8 @@ with st.sidebar:
                     st.session_state.rows = record.rows
                     st.session_state.profile = record.profile
                     st.session_state.current_analysis_id = meta.id
+                    st.session_state.profile_debug = None
+                    st.session_state.raw_profile = None
                     st.rerun()
             with c2:
                 if st.button("🗑", key=f"del_{meta.id}", help="Elimina questa analisi"):
@@ -149,7 +153,7 @@ if submitted:
 
         # Stage 2 – Claude profile analysis
         status.info("🤖 Analysing profile with Claude…")
-        profile = analyze_profile(raw_profile, profile_url.strip(), use_cache=use_cache)
+        profile, profile_debug = analyze_profile(raw_profile, profile_url.strip(), use_cache=use_cache)
         progress.progress(35, text="Profile analysed")
 
         # Stage 3 – find competitors
@@ -191,6 +195,8 @@ if submitted:
         st.session_state.rows = rows
         st.session_state.profile = profile
         st.session_state.current_analysis_id = record_id
+        st.session_state.profile_debug = profile_debug
+        st.session_state.raw_profile = raw_profile
 
     except Exception as exc:
         progress.empty()
@@ -222,6 +228,32 @@ if st.session_state.rows:
         if profile.social_links:
             links_md = "  ·  ".join(f"[{p.capitalize()}]({u})" for p, u in profile.social_links.items())
             st.write(f"**Social links:** {links_md}")
+
+    if st.session_state.profile_debug:
+        debug = st.session_state.profile_debug
+        with st.expander("🔧 Debug — raw data Claude saw", expanded=False):
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Platform", debug["platform"])
+            col_b.metric("Sparse data triggered", "Yes" if debug["sparse_data"] else "No")
+            col_c.metric("Handle hint triggered", "Yes" if debug["handle_hint_triggered"] else "No")
+
+            st.write("**Scraped description (raw):**")
+            st.code(debug["scraped_description"] or "(empty)", language="text")
+
+            if debug["meta_tags_subset"]:
+                st.write("**Relevant meta tags:**")
+                st.json(debug["meta_tags_subset"])
+
+            if debug["enrichment_snippets"]:
+                st.write("**SerpAPI enrichment snippets:**")
+                for r in debug["enrichment_snippets"]:
+                    st.markdown(f"- **{r.title}** — [{r.url}]({r.url})  \n  {r.snippet}")
+            elif debug["sparse_data"]:
+                st.warning("Sparse data triggered but no SerpAPI snippets were returned.")
+
+            if debug["visible_text_preview"]:
+                st.write("**Visible page text (first 500 chars):**")
+                st.code(debug["visible_text_preview"], language="text")
 
     st.divider()
 

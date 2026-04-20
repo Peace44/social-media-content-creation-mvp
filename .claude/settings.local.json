@@ -16,7 +16,8 @@
       "Bash(git push *)",
       "Bash(git remote *)",
       "Bash(gh auth *)",
-      "Bash(.venv/bin/streamlit run *)"
+      "Bash(.venv/bin/streamlit run *)",
+      "Bash(python3 *)"
     ]
   }
 }
