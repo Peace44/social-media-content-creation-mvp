@@ -15,6 +15,9 @@ _HEADERS = {
     "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+# Platforms that require JS rendering to get real bio content
+_JS_PLATFORMS = {"Instagram", "TikTok"}
+
 
 class RawProfile:
     """Container for data scraped from a social media profile page."""
@@ -66,28 +69,62 @@ def _detect_platform(url: str) -> str:
     return "Website"
 
 
+def _scrape_with_playwright(url: str, verbose: bool = False) -> str:
+    """Render the page with a real browser and return the final HTML."""
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
+    console = Console()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            ctx = browser.new_context(
+                user_agent=_HEADERS["User-Agent"],
+                locale="it-IT",
+                extra_http_headers={"Accept-Language": _HEADERS["Accept-Language"]},
+            )
+            page = ctx.new_page()
+            page.goto(url, wait_until="networkidle", timeout=20_000)
+            html = page.content()
+            browser.close()
+            return html
+    except PWTimeout:
+        if verbose:
+            console.print(f"[yellow]Playwright timeout for {url}, falling back to httpx[/yellow]")
+        return ""
+    except Exception as exc:
+        if verbose:
+            console.print(f"[yellow]Playwright error for {url}: {exc}[/yellow]")
+        return ""
+
+
 def scrape_profile(url: str, verbose: bool = False) -> RawProfile:
     """Fetch a social profile URL and extract useful text/metadata."""
     console = Console()
     platform = _detect_platform(url)
 
-    try:
-        with httpx.Client(headers=_HEADERS, follow_redirects=True, timeout=15) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            html = response.text
-    except httpx.HTTPError as exc:
+    html = ""
+    if platform in _JS_PLATFORMS:
         if verbose:
-            console.print(f"[yellow]Warning: Could not fetch {url}: {exc}[/yellow]")
-        # Return minimal profile so the pipeline can continue with Claude's knowledge
-        return RawProfile(
-            url=url,
-            title="",
-            description="",
-            meta_tags={},
-            visible_text="",
-            platform=platform,
-        )
+            console.print(f"  Using Playwright for {platform} ({url})")
+        html = _scrape_with_playwright(url, verbose=verbose)
+
+    if not html:
+        try:
+            with httpx.Client(headers=_HEADERS, follow_redirects=True, timeout=15) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                html = response.text
+        except httpx.HTTPError as exc:
+            if verbose:
+                console.print(f"[yellow]Warning: Could not fetch {url}: {exc}[/yellow]")
+            return RawProfile(
+                url=url,
+                title="",
+                description="",
+                meta_tags={},
+                visible_text="",
+                platform=platform,
+            )
 
     soup = BeautifulSoup(html, "html.parser")
 
