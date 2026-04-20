@@ -111,13 +111,20 @@ def _enrich_profile_from_search(
     from competitor_analysis.models import SearchResult
 
     handle = profile_url.rstrip("/").split("/")[-1]
-    handle_keywords = " ".join(w for w in re.split(r"[._\-]", handle) if len(w) > 2)
 
-    query_a = f'"{handle}" instagram {handle_keywords} Italia'
-    query_b = f"site:instagram.com {handle}"
+    # Ordered from most-specific to broadest — stop once we have results
+    queries = [
+        f"@{handle} instagram",          # @ prefix often surfaces the profile bio in snippets
+        f"site:instagram.com/{handle}",   # direct profile page lookup
+        handle,                           # bare handle as fallback
+    ]
 
-    results_a = search(query_a, use_cache=use_cache, verbose=verbose)
-    results_b = search(query_b, use_cache=use_cache, verbose=verbose)
+    results_a: list = []
+    results_b: list = []
+    for q in queries:
+        results_a = search(q, use_cache=use_cache, verbose=verbose)
+        if results_a:
+            break
 
     # Merge, deduplicated by URL
     seen: set[str] = set()
