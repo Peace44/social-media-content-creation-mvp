@@ -211,13 +211,17 @@ if st.session_state.rows:
     m3.metric("Market", profile.geographic_scope)
     m4.metric("Competitors found", len(rows))
 
-    with st.expander("Full profile details"):
+    with st.expander("Full profile details", expanded=True):
+        st.write(f"**Bio:** {profile.bio}")
         st.write(f"**Target audience:** {profile.target_audience}")
         st.write(f"**Services:** {', '.join(profile.services)}")
         if profile.brand_values:
             st.write(f"**Brand values:** {', '.join(profile.brand_values)}")
         if profile.website:
             st.write(f"**Website:** {profile.website}")
+        if profile.social_links:
+            links_md = "  ·  ".join(f"[{p.capitalize()}]({u})" for p, u in profile.social_links.items())
+            st.write(f"**Social links:** {links_md}")
 
     st.divider()
 
