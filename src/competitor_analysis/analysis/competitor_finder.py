@@ -34,27 +34,6 @@ Always respond with valid JSON only — no markdown, no explanation.
 _VERIFY_CACHE_DIR = Path(__file__).resolve().parents[4] / ".cache" / "verify"
 _VERIFY_CACHE_TTL = timedelta(days=7)
 
-# Step D: few-shot examples — only injected when niche is coach/counselor
-_COACH_NICHE_TOKENS = {"coach", "counselor", "counseling", "coaching"}
-
-_COACH_FEW_SHOT = """\
-EXAMPLES for this niche (marketing per coach e counselor):
-
-CORRECT direct competitors (same niche):
-- Federico Ferrarelli (@federicoferrarellimarketing): consulente di marketing specializzato in coach e counselor italiani
-- Ivano Peggion – Impact Academy: formazione e marketing specificamente per coach professionisti
-- Francesco Conte: strategia social media per coach e professionisti della crescita personale
-
-NOT direct competitors (reject these even if they work in marketing):
-- Renato Bertuol: consulente marketing per PMI — target completamente diverso (piccole imprese, non coach)
-- Alessandro Ingala: marketing e comunicazione per aziende — non si occupa di coach/counselor
-- Lorenzo Marabini: marketing per imprese e organizzazioni — niche PMI, non coach
-
-REJECTION CRITERIA — exclude any candidate who:
-- Works in marketing for generic SMEs (PMI / Piccole e Medie Imprese)
-- Targets industries unrelated to personal development, coaching, or counseling
-- Only tangentially mentions coaching (e.g. one blog post) but focuses on other sectors
-"""
 
 
 def _call_claude(system: str, user: str, retries: int = 3, verbose: bool = False) -> str:
@@ -196,10 +175,10 @@ def analyze_profile(
     user_prompt = f"""\
 Analyze this social media profile and return a JSON object with these fields:
 - name (str): The person or brand name
-- niche (str): Their market niche / industry — be as specific as possible \
-(e.g. "marketing per coach e counselor" NOT just "marketing")
-- target_audience (str): Who they target — be specific \
-(e.g. "coach e counselor italiani" NOT just "professionisti")
+- niche (str): Their specific market sub-niche — be precise, not generic \
+(e.g. "email marketing per e-commerce" not just "marketing")
+- target_audience (str): Their specific target audience — be precise \
+(e.g. "piccoli e-commerce italiani" not just "imprese")
 - services (list[str]): Services or products they offer
 - geographic_scope (str): Geographic market (e.g. "Italy", "Global")
 - brand_values (list[str]): Core brand values or positioning
@@ -412,15 +391,10 @@ def find_competitors(
         for i, r in enumerate(unique_results[:30])
     )
 
-    # Step D: inject rejection criteria + conditional few-shots
-    niche_lower = profile.niche.lower()
-    is_coach_niche = any(token in niche_lower for token in _COACH_NICHE_TOKENS) or any(
-        token in profile.target_audience.lower() for token in _COACH_NICHE_TOKENS
-    )
-    few_shot_block = _COACH_FEW_SHOT if is_coach_niche else (
+    rejection_criteria = (
         f"\nREJECTION CRITERIA — only include candidates who operate in '{profile.niche}' "
         f"and target '{profile.target_audience}'. Exclude anyone in a different niche even "
-        f"if they use similar marketing tactics.\n"
+        f"if they use similar tactics or operate in the same geography.\n"
     )
 
     user_prompt = f"""\
@@ -434,7 +408,7 @@ Geographic scope: {profile.geographic_scope}
 From the following web search results, identify up to {max_results} DIRECT competitors.
 A direct competitor operates in the same niche ({profile.niche}), targets the same audience \
 ({profile.target_audience}), offers similar services, and operates in {profile.geographic_scope}.
-{few_shot_block}
+{rejection_criteria}
 Search results:
 {results_text}
 
