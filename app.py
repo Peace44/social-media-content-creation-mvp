@@ -84,7 +84,7 @@ with st.sidebar:
         for meta in metas:
             c1, c2 = st.columns([5, 1])
             with c1:
-                btn_label = f"**{meta.profile_name}**  \n{meta.created_at[:10]} · {meta.competitor_count} competitor"
+                btn_label = f"**{meta.profile_name}**  \n{meta.created_at[:16].replace('T', ' ')} · {meta.competitor_count} competitor"
                 if st.button(btn_label, key=f"load_{meta.id}", use_container_width=True):
                     record = load_analysis(meta.id)
                     st.session_state.rows = record.rows
