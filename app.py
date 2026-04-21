@@ -244,7 +244,7 @@ if st.session_state.rows:
                 st.write("**Relevant meta tags:**")
                 st.json(debug["meta_tags_subset"])
 
-            if st.session_state.raw_profile and st.session_state.raw_profile.extra_data:
+            if st.session_state.raw_profile and getattr(st.session_state.raw_profile, "extra_data", None):
                 st.write("**Structured data extracted:**")
                 st.json(st.session_state.raw_profile.extra_data)
 
