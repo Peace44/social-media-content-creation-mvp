@@ -3,11 +3,24 @@ from __future__ import annotations
 
 import io
 import csv
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 
 import streamlit as st
+
+
+@st.cache_resource
+def _install_playwright_browser() -> None:
+    subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        check=False,
+    )
+
+
+_install_playwright_browser()
 
 from competitor_analysis.models import AnalysisRecord, CompetitorRow
 from competitor_analysis.storage.history import save_analysis, load_analysis, list_analyses, delete_analysis
