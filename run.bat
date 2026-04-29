@@ -80,6 +80,6 @@ echo  Si aprira' automaticamente nel tuo browser.
 echo  Per chiuderla premi CTRL+C in questa finestra.
 echo.
 
-.venv\Scripts\streamlit run app.py
+.venv\Scripts\streamlit run app.py --server.headless false
 
 pause
