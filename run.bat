@@ -65,9 +65,8 @@ echo.
 
 REM ── Dipendenze ────────────────────────────────────
 echo  [3/4] Aggiorno le dipendenze...
-.venv\Scripts\pip install --upgrade pip -q
-.venv\Scripts\pip install -r requirements.txt -q
-.venv\Scripts\pip install -e . -q
+.venv\Scripts\pip install -r requirements.txt -q --disable-pip-version-check
+.venv\Scripts\pip install -e . -q --disable-pip-version-check
 echo.
 
 REM ── Playwright browser ────────────────────────────
