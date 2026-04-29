@@ -70,8 +70,8 @@ echo  [3/4] Aggiorno le dipendenze...
 echo.
 
 REM ── Playwright browser ────────────────────────────
-echo  [4/4] Controllo il browser interno...
-.venv\Scripts\python -m playwright install chromium >nul 2>&1
+echo  [4/4] Installo il browser interno (la prima volta ci vuole qualche minuto^)...
+.venv\Scripts\python -m playwright install chromium
 echo.
 
 REM ── Avvio ─────────────────────────────────────────
