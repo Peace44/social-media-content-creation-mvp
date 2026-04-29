@@ -74,9 +74,17 @@ class AnalysisRecordMeta(BaseModel):
     competitor_count: int
 
 
+class TargetAnalysis(BaseModel):
+    problemi: list[str] = Field(default_factory=list)
+    obiettivi: list[str] = Field(default_factory=list)
+    dolore: list[str] = Field(default_factory=list)
+    desideri: list[str] = Field(default_factory=list)
+
+
 class AnalysisRecord(BaseModel):
     id: str
     created_at: str
     input_url: str
     profile: ProfileSummary
     rows: list[CompetitorRow]
+    target_analysis: TargetAnalysis | None = None

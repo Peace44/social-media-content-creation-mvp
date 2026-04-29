@@ -22,7 +22,7 @@ def _install_playwright_browser() -> None:
 
 _install_playwright_browser()
 
-from competitor_analysis.models import AnalysisRecord, CompetitorRow
+from competitor_analysis.models import AnalysisRecord, CompetitorRow, TargetAnalysis
 from competitor_analysis.storage.history import save_analysis, load_analysis, list_analyses, delete_analysis
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -85,6 +85,7 @@ if "rows" not in st.session_state:
     st.session_state.current_analysis_id = None
     st.session_state.profile_debug = None
     st.session_state.raw_profile = None
+    st.session_state.target_analysis = None
 
 # ── Sidebar – Cronologia ──────────────────────────────────────────────────────
 with st.sidebar:
@@ -105,6 +106,7 @@ with st.sidebar:
                     st.session_state.current_analysis_id = meta.id
                     st.session_state.profile_debug = None
                     st.session_state.raw_profile = None
+                    st.session_state.target_analysis = record.target_analysis
                     st.rerun()
             with c2:
                 if st.button("🗑", key=f"del_{meta.id}", help="Elimina questa analisi"):
@@ -113,6 +115,7 @@ with st.sidebar:
                         st.session_state.rows = []
                         st.session_state.profile = None
                         st.session_state.current_analysis_id = None
+                        st.session_state.target_analysis = None
                     st.rerun()
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -148,6 +151,7 @@ if submitted:
 
     from competitor_analysis.scraper.profile import scrape_profile
     from competitor_analysis.analysis.competitor_finder import analyze_profile, find_competitors
+    from competitor_analysis.analysis.target_analyzer import analyze_target
     from competitor_analysis.analysis.kpi_analyzer import (
         _gather_competitor_data,
         _analyze_kpis,
@@ -191,6 +195,9 @@ if submitted:
             pct = 60 + int(40 * (i + 1) / len(candidates))
             progress.progress(pct, text=f"KPIs: {i + 1}/{len(candidates)}")
 
+        # Stage 5 – target analysis
+        status.info("🎯 Analysing target audience…")
+        target_analysis = analyze_target(profile)
         progress.progress(100, text="Done!")
         status.success(f"✅ Analysis complete — {len(rows)} competitors found")
 
@@ -203,6 +210,7 @@ if submitted:
             input_url=profile_url.strip(),
             profile=profile,
             rows=rows,
+            target_analysis=target_analysis,
         )
         save_analysis(record)
         st.session_state.rows = rows
@@ -210,6 +218,7 @@ if submitted:
         st.session_state.current_analysis_id = record_id
         st.session_state.profile_debug = profile_debug
         st.session_state.raw_profile = raw_profile
+        st.session_state.target_analysis = target_analysis
 
     except Exception as exc:
         progress.empty()
@@ -264,6 +273,35 @@ if st.session_state.rows:
             if debug["visible_text_preview"]:
                 st.write("**Visible page text (first 500 chars):**")
                 st.code(debug["visible_text_preview"], language="text")
+
+    st.divider()
+
+    # ── Target analysis table ─────────────────────────────────────────────────
+    target_analysis: TargetAnalysis | None = st.session_state.target_analysis
+    if target_analysis:
+        st.subheader("🎯 Analisi del target")
+
+        col_p, col_o, col_d, col_des = st.columns(4)
+
+        def _render_list_col(col, header: str, items: list[str], color: str) -> None:
+            with col:
+                st.markdown(
+                    f"<div style='background:{color};padding:10px 14px 4px;border-radius:8px 8px 0 0;'>"
+                    f"<strong style='color:white;font-size:0.95rem'>{header}</strong></div>",
+                    unsafe_allow_html=True,
+                )
+                bullets = "".join(f"<li style='margin-bottom:6px'>{item}</li>" for item in items)
+                st.markdown(
+                    f"<div style='background:#f7f7fb;padding:12px 14px;border-radius:0 0 8px 8px;"
+                    f"border:1px solid #e0e0e0;min-height:220px'><ul style='padding-left:18px;margin:0'>"
+                    f"{bullets}</ul></div>",
+                    unsafe_allow_html=True,
+                )
+
+        _render_list_col(col_p,   "PROBLEMI",   target_analysis.problemi,   "#09084c")
+        _render_list_col(col_o,   "OBIETTIVI",  target_analysis.obiettivi,  "#ff7300")
+        _render_list_col(col_d,   "DOLORE",     target_analysis.dolore,     "#c0392b")
+        _render_list_col(col_des, "DESIDERI",   target_analysis.desideri,   "#2e7d32")
 
     st.divider()
 
