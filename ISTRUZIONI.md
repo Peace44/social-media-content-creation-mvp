@@ -32,8 +32,16 @@ Devi installare due programmi gratuiti. Fallo solo la prima volta.
 
 ### 3 — La cartella del progetto
 
-Chiedi a Peace di mandarti la cartella del progetto (o il link per scaricarla).  
-Salvala in un posto comodo, ad esempio sul Desktop.
+Peace ti manderà un comando da copiare. Sarà simile a questo:
+
+```
+git clone https://Peace44:IL_TOKEN@github.com/Peace44/social-media-content-creation-mvp.git %USERPROFILE%\Desktop\kolif-app
+```
+
+Per eseguirlo:
+1. Premi **Win + R**, scrivi `cmd` e premi Invio
+2. Incolla il comando (tasto destro → Incolla) e premi Invio
+3. Aspetta che finisca — comparirà la cartella `kolif-app` sul Desktop
 
 ### 4 — Il file .env (le chiavi API)
 
