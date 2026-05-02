@@ -26,7 +26,7 @@ def _load_cache(query: str) -> list[SearchResult] | None:
     path = _cache_path(query)
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     cached_at = datetime.fromisoformat(data["cached_at"])
     if datetime.now() - cached_at > _CACHE_TTL:
         return None
@@ -45,7 +45,8 @@ def _save_cache(query: str, results: list[SearchResult]) -> None:
             },
             ensure_ascii=False,
             indent=2,
-        )
+        ),
+        encoding="utf-8",
     )
 
 

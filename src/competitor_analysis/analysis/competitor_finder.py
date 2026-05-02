@@ -251,7 +251,7 @@ def _load_verify_cache(primary_url: str, niche: str) -> dict | None:
     path = _verify_cache_path(primary_url, niche)
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     cached_at = datetime.fromisoformat(data["cached_at"])
     if datetime.now() - cached_at > _VERIFY_CACHE_TTL:
         return None
@@ -261,7 +261,7 @@ def _load_verify_cache(primary_url: str, niche: str) -> dict | None:
 def _save_verify_cache(primary_url: str, niche: str, result: dict) -> None:
     _VERIFY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _verify_cache_path(primary_url, niche)
-    path.write_text(json.dumps({**result, "cached_at": datetime.now().isoformat()}, ensure_ascii=False, indent=2))
+    path.write_text(json.dumps({**result, "cached_at": datetime.now().isoformat()}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _verify_candidates(
