@@ -1,0 +1,7 @@
+Analisi del target
+
+Competitor (mio rivale) vs Target (potenziale clienti):
+"""
+La tabella docs\strategia-acquisizione-organica.png si referisce all'analisi del target 
+(tutti i clienti potenziale e non io o i miei rivali)
+"""

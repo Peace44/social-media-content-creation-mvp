@@ -280,6 +280,7 @@ if st.session_state.rows:
     target_analysis: TargetAnalysis | None = st.session_state.target_analysis
     if target_analysis:
         st.subheader("🎯 Analisi del target")
+        st.caption("Clienti potenziali — non il professionista analizzato né i suoi competitor")
 
         col_p, col_o, col_d, col_des = st.columns(4)
 

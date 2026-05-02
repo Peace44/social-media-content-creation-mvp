@@ -76,10 +76,10 @@ echo.
 
 REM ── Avvio ─────────────────────────────────────────
 echo  Tutto pronto! Avvio l'applicazione...
-echo  Si aprira' automaticamente nel tuo browser.
+echo  Apri il browser e vai su: http://localhost:8501
 echo  Per chiuderla premi CTRL+C in questa finestra.
 echo.
 
-.venv\Scripts\streamlit run app.py --server.headless false
+.venv\Scripts\streamlit run app.py --server.headless true
 
 pause
