@@ -22,7 +22,11 @@
       "Bash(.venv/bin/playwright install *)",
       "Bash(fuser -k 8501/tcp)",
       "Bash(nohup .venv/bin/streamlit run app.py --server.headless true)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(/usr/bin/python3.12 --version)",
+      "Read(///wsl.localhost/Ubuntu/usr/**)",
+      "Read(///wsl.localhost/Ubuntu/usr/local/**)",
+      "Bash(wsl *)"
     ]
   }
 }

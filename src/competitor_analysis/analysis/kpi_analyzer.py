@@ -19,7 +19,7 @@ You are an expert social media analyst. Your task is to extract structured KPI d
 about a competitor from web research data. Always respond with valid JSON only.
 """
 
-_PLATFORMS = ["instagram", "facebook", "linkedin", "youtube", "tiktok"]
+_PLATFORMS = ["instagram", "facebook", "linkedin", "youtube", "tiktok", "twitter"]
 
 
 def _call_claude(user: str, retries: int = 3) -> str:
@@ -52,8 +52,8 @@ def _gather_competitor_data(
         f"Description: {candidate.description}",
     ]
 
-    # Enrich with a targeted search
-    query = f"{candidate.name} marketing Italy Instagram followers"
+    # Enrich with a targeted search (platform-agnostic — no hardcoded platform)
+    query = f"{candidate.name} {profile.niche} followers"
     results = search(query, use_cache=use_cache, verbose=verbose)
     if results:
         snippets = "\n".join(f"- {r.title}: {r.snippet}" for r in results[:5])
@@ -96,7 +96,7 @@ Raw data:
 
 Return a JSON object with exactly these fields:
 - follower_count (dict[str,str]): Platform name (lowercase) -> follower count as string like "12.5K", "3,200", or "N/A"
-  Platforms to include: instagram, facebook, linkedin, youtube, tiktok
+  Platforms to include: instagram, facebook, linkedin, youtube, tiktok, twitter
 - interaction_score (str): Overall engagement level: "high", "medium", "low", or "N/A"
 - structure (dict[str,bool]): Whether they have each of: website, landing_page, ebook, freebie, multi_platform
 - active_since (str): When they started (year or date string), or "N/A"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -16,8 +17,23 @@ _HEADERS = {
     "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-# Platforms that require JS rendering to get real bio content
-_JS_PLATFORMS = {"Instagram", "TikTok"}
+# Map bare hostnames (without www.) to a canonical platform name.
+_PLATFORM_HOSTS: dict[str, str] = {
+    "instagram.com": "Instagram",
+    "facebook.com": "Facebook",
+    "fb.com": "Facebook",
+    "linkedin.com": "LinkedIn",
+    "tiktok.com": "TikTok",
+    "twitter.com": "Twitter",
+    "x.com": "Twitter",
+    "youtube.com": "YouTube",
+    "youtu.be": "YouTube",
+}
+
+# Platforms that need a real browser.  Playwright improves rendering but does
+# not defeat login walls — the search-fallback in competitor_finder.py is what
+# actually recovers usable data when a page is login-gated.
+_JS_PLATFORMS = {"Instagram", "TikTok", "Twitter", "Facebook", "LinkedIn"}
 
 
 class RawProfile:
@@ -61,17 +77,21 @@ class RawProfile:
 
 
 def _detect_platform(url: str) -> str:
-    url_lower = url.lower()
-    if "instagram.com" in url_lower:
-        return "Instagram"
-    if "facebook.com" in url_lower:
-        return "Facebook"
-    if "linkedin.com" in url_lower:
-        return "LinkedIn"
-    if "tiktok.com" in url_lower:
-        return "TikTok"
-    if "youtube.com" in url_lower or "youtu.be" in url_lower:
-        return "YouTube"
+    """Return a canonical platform name for *url* using exact hostname matching.
+
+    Hostname matching (not substring) avoids false positives such as
+    ``netflix.com`` matching ``x.com`` via substring search.
+    """
+    try:
+        host = urlparse(url).hostname or ""
+    except ValueError:
+        host = ""
+    # Strip port if present (urlparse keeps it in hostname for bare IPs but
+    # not for normal domains, so this is just a safety measure).
+    host = host.split(":")[0].lower()
+    for domain, platform in _PLATFORM_HOSTS.items():
+        if host == domain or host.endswith("." + domain):
+            return platform
     return "Website"
 
 
@@ -81,8 +101,10 @@ def _parse_extra_data(description: str, visible_text: str, platform: str) -> dic
 
     if platform == "Instagram" and description:
         # Description format: "117 follower, 206 seguiti, 54 post - Name (@handle) su Instagram: 'bio'"
+        # or English: "117 Followers, 206 Following, 54 Posts"
         m_followers = re.search(r"([\d,.]+[KkMm]?)\s*follower", description, re.I)
-        m_following = re.search(r"([\d,.]+[KkMm]?)\s*seguiti", description, re.I)
+        # Italian "seguiti" = Following; also match English "following"
+        m_following = re.search(r"([\d,.]+[KkMm]?)\s*(?:seguiti|following)", description, re.I)
         m_posts = re.search(r"([\d,.]+[KkMm]?)\s*post", description, re.I)
         m_handle = re.search(r"@([\w.]+)", description)
         if m_followers:
@@ -91,6 +113,26 @@ def _parse_extra_data(description: str, visible_text: str, platform: str) -> dic
             data["following"] = m_following.group(1)
         if m_posts:
             data["posts_count"] = m_posts.group(1)
+        if m_handle:
+            data["handle"] = m_handle.group(1)
+
+    elif platform == "Twitter" and description:
+        # OG description often contains follower counts and handle
+        m_followers = re.search(r"([\d,.]+[KkMm]?)\s*follower", description, re.I)
+        m_handle = re.search(r"@([\w]+)", description)
+        if m_followers:
+            data["followers"] = m_followers.group(1)
+        if m_handle:
+            data["handle"] = m_handle.group(1)
+
+    elif platform == "TikTok" and description:
+        m_followers = re.search(r"([\d,.]+[KkMm]?)\s*follower", description, re.I)
+        m_likes = re.search(r"([\d,.]+[KkMm]?)\s*like", description, re.I)
+        m_handle = re.search(r"@([\w.]+)", description)
+        if m_followers:
+            data["followers"] = m_followers.group(1)
+        if m_likes:
+            data["likes"] = m_likes.group(1)
         if m_handle:
             data["handle"] = m_handle.group(1)
 

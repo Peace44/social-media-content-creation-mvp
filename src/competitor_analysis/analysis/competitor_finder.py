@@ -35,6 +35,48 @@ _VERIFY_CACHE_DIR = Path(__file__).resolve().parents[4] / ".cache" / "verify"
 _VERIFY_CACHE_TTL = timedelta(days=7)
 
 
+# ── Handle/slug extraction helper ─────────────────────────────────────────────
+
+def _extract_handle(url: str) -> str:
+    """Return the most meaningful user/page slug from a social URL.
+
+    Handles common path patterns:
+      instagram.com/handle           → handle
+      twitter.com/handle             → handle
+      x.com/handle                   → handle
+      tiktok.com/@handle             → handle (strips leading @)
+      linkedin.com/in/handle         → handle
+      linkedin.com/company/handle    → handle
+      facebook.com/pagename          → pagename
+      youtube.com/@handle            → handle
+      youtube.com/channel/UCxxx      → UCxxx
+    Falls back to the last non-empty path segment.
+    """
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return url.rstrip("/").split("/")[-1]
+
+    segments = [s for s in parsed.path.split("/") if s]
+    if not segments:
+        return ""
+
+    # LinkedIn: /in/<handle> or /company/<handle>
+    if len(segments) >= 2 and segments[0].lower() in ("in", "company"):
+        return segments[1]
+
+    # YouTube: /channel/<id> → not very useful, skip the "channel" prefix
+    if len(segments) >= 2 and segments[0].lower() == "channel":
+        return segments[1]
+
+    handle = segments[-1]
+    # Strip leading @ (TikTok, YouTube @handles)
+    if handle.startswith("@"):
+        handle = handle[1:]
+    return handle
+
+
 
 def _call_claude(system: str, user: str, retries: int = 3, verbose: bool = False) -> str:
     """Call Claude API with retry on transient errors."""
@@ -61,10 +103,28 @@ def _call_claude(system: str, user: str, retries: int = 3, verbose: bool = False
 # ── Step A: profile enrichment via SerpAPI when scraping is blocked ───────────
 
 _GENERIC_DESC_PHRASES = (
+    # Instagram
     "instagram photos and videos",
     "see instagram photos",
+    # Twitter / X
+    "sign in to x",
+    "join x today",
+    "sign up for twitter",
+    "twitter is better on the app",
+    # LinkedIn
+    "join linkedin",
+    "sign in to linkedin",
+    # Facebook
+    "see posts, photos and more on facebook",
+    "facebook – log in or sign up",
+    "log in to facebook",
+    # Generic / Italian login-wall signals
     "log in to",
+    "log in or sign up",
     "sign up to see",
+    "accedi",          # "log in" in Italian
+    "iscriviti",       # "sign up" in Italian
+    "registrati",      # "register" in Italian
 )
 
 
@@ -77,8 +137,60 @@ def _is_sparse(raw: RawProfile) -> bool:
     return any(phrase in desc_lower for phrase in _GENERIC_DESC_PHRASES)
 
 
+def _enrichment_queries(platform: str, handle: str, url: str) -> list[str]:
+    """Return ordered SerpAPI queries to recover bio data for *platform*.
+
+    Queries go from most-specific to broadest.  The caller stops at the first
+    set that returns results, so specificity ordering matters.
+    """
+    if platform == "Instagram":
+        return [
+            f"@{handle} instagram",
+            f"site:instagram.com/{handle}",
+            handle,
+        ]
+    if platform == "Twitter":
+        return [
+            f"site:x.com/{handle}",
+            f"site:twitter.com/{handle}",
+            f"@{handle} (x.com OR twitter.com)",
+            handle,
+        ]
+    if platform == "LinkedIn":
+        return [
+            f"site:linkedin.com {handle}",
+            f"{handle} linkedin",
+            handle,
+        ]
+    if platform == "Facebook":
+        return [
+            f"site:facebook.com/{handle}",
+            f"{handle} facebook",
+            handle,
+        ]
+    if platform == "TikTok":
+        return [
+            f"site:tiktok.com/@{handle}",
+            f"@{handle} tiktok",
+            handle,
+        ]
+    if platform == "YouTube":
+        return [
+            f"site:youtube.com {handle}",
+            f"{handle} youtube channel",
+            handle,
+        ]
+    # Generic website: search for the domain name itself
+    from urllib.parse import urlparse
+    try:
+        domain = urlparse(url).netloc.lstrip("www.")
+    except ValueError:
+        domain = handle
+    return [domain, handle]
+
+
 def _enrich_profile_from_search(
-    profile_url: str, use_cache: bool, verbose: bool
+    profile_url: str, platform: str, use_cache: bool, verbose: bool
 ) -> tuple[str, list]:
     """Run targeted SerpAPI queries to recover bio info when direct scraping fails.
 
@@ -86,26 +198,19 @@ def _enrich_profile_from_search(
     """
     from competitor_analysis.models import SearchResult
 
-    handle = profile_url.rstrip("/").split("/")[-1]
+    handle = _extract_handle(profile_url)
+    queries = _enrichment_queries(platform, handle, profile_url)
 
-    # Ordered from most-specific to broadest — stop once we have results
-    queries = [
-        f"@{handle} instagram",          # @ prefix often surfaces the profile bio in snippets
-        f"site:instagram.com/{handle}",   # direct profile page lookup
-        handle,                           # bare handle as fallback
-    ]
-
-    results_a: list = []
-    results_b: list = []
+    results_found: list = []
     for q in queries:
-        results_a = search(q, use_cache=use_cache, verbose=verbose)
-        if results_a:
+        results_found = search(q, use_cache=use_cache, verbose=verbose)
+        if results_found:
             break
 
-    # Merge, deduplicated by URL
+    # Deduplicate by URL
     seen: set[str] = set()
     merged: list[SearchResult] = []
-    for r in results_a + results_b:
+    for r in results_found:
         if r.url not in seen:
             seen.add(r.url)
             merged.append(r)
@@ -137,13 +242,13 @@ def analyze_profile(
     sparse_data = _is_sparse(raw)
     if sparse_data:
         extra_context, enrichment_snippets = _enrich_profile_from_search(
-            profile_url, use_cache=use_cache, verbose=verbose
+            profile_url, raw.platform, use_cache=use_cache, verbose=verbose
         )
 
     # Extract handle/slug from URL as a niche signal when page content is unavailable
-    handle = profile_url.rstrip("/").split("/")[-1]
+    handle = _extract_handle(profile_url)
     handle_hint = (
-        f"\nCRITICAL: The username/handle in the URL is '{handle}'. "
+        f"\nCRITICAL: The username/handle in the URL is '{handle}' (platform: {raw.platform}). "
         "Extract every meaningful word from it and use them as the primary signals "
         "to determine 'niche' and 'target_audience'. "
         "Do NOT override or ignore these signals with generic labels — the handle is "

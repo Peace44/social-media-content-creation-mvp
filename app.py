@@ -309,7 +309,7 @@ if st.session_state.rows:
     # ── Competitors table ─────────────────────────────────────────────────────
     st.subheader("Competitor analysis")
 
-    _PLATFORMS = ["instagram", "facebook", "linkedin", "youtube", "tiktok"]
+    _PLATFORMS = ["instagram", "facebook", "linkedin", "youtube", "tiktok", "twitter"]
 
     def _social_links_md(row: CompetitorRow) -> str:
         parts = []
