@@ -2,6 +2,9 @@
 from competitor_analysis.models import (
     CompetitorKPI,
     CompetitorRow,
+    ContentPillar,
+    EditorialItem,
+    MarketingStrategy,
     ProfileSummary,
     SearchResult,
 )
@@ -58,3 +61,22 @@ def test_profile_summary_round_trip(sample_profile: ProfileSummary):
     restored = ProfileSummary(**data)
     assert restored.name == sample_profile.name
     assert restored.services == sample_profile.services
+
+
+def test_content_pillar_defaults():
+    pillar = ContentPillar(title="Test pillar")
+    assert pillar.description == ""
+    assert pillar.sample_topics == []
+
+
+def test_editorial_item_goal_default():
+    item = EditorialItem(week=1, day="Lunedì", platform="Instagram", format="Reel", pillar="Test", topic="Un'idea")
+    assert item.goal == ""
+
+
+def test_marketing_strategy_defaults():
+    strategy = MarketingStrategy(objective="Test obj")
+    assert strategy.summary == ""
+    assert strategy.content_pillars == []
+    assert strategy.editorial_plan == []
+    assert strategy.kpis == []

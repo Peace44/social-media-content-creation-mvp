@@ -86,6 +86,8 @@ if "rows" not in st.session_state:
     st.session_state.profile_debug = None
     st.session_state.raw_profile = None
     st.session_state.target_analysis = None
+    st.session_state.marketing_strategy = None
+    st.session_state.objective = ""
 
 # ── Sidebar – Cronologia ──────────────────────────────────────────────────────
 with st.sidebar:
@@ -107,6 +109,8 @@ with st.sidebar:
                     st.session_state.profile_debug = None
                     st.session_state.raw_profile = None
                     st.session_state.target_analysis = record.target_analysis
+                    st.session_state.marketing_strategy = record.marketing_strategy
+                    st.session_state.objective = record.objective or ""
                     st.rerun()
             with c2:
                 if st.button("🗑", key=f"del_{meta.id}", help="Elimina questa analisi"):
@@ -116,6 +120,8 @@ with st.sidebar:
                         st.session_state.profile = None
                         st.session_state.current_analysis_id = None
                         st.session_state.target_analysis = None
+                        st.session_state.marketing_strategy = None
+                        st.session_state.objective = ""
                     st.rerun()
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -219,6 +225,8 @@ if submitted:
         st.session_state.profile_debug = profile_debug
         st.session_state.raw_profile = raw_profile
         st.session_state.target_analysis = target_analysis
+        st.session_state.marketing_strategy = None
+        st.session_state.objective = ""
 
     except Exception as exc:
         progress.empty()
@@ -395,6 +403,155 @@ if st.session_state.rows:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
+
+    # ── Marketing strategy section ────────────────────────────────────────────
+    if st.session_state.target_analysis:
+        st.divider()
+        st.subheader("🎯 Strategia di marketing")
+        st.caption("Genera una strategia personalizzata basata sull'analisi dei competitor e del target")
+
+        with st.form("strategy_form"):
+            objective_input = st.text_area(
+                "Il tuo obiettivo",
+                value=st.session_state.objective,
+                placeholder="Es. Acquisire 10 nuovi clienti coach in 3 mesi aumentando la visibilità su Instagram",
+                height=90,
+            )
+            col_tf, col_pp, _ = st.columns([2, 2, 6])
+            with col_tf:
+                timeframe = st.selectbox(
+                    "Orizzonte temporale",
+                    ["1 mese", "3 mesi", "6 mesi"],
+                    index=1,
+                )
+            with col_pp:
+                priority_platform = st.selectbox(
+                    "Piattaforma prioritaria",
+                    ["(nessuna preferenza)", "Instagram", "LinkedIn", "Facebook", "TikTok", "YouTube"],
+                )
+            gen_submitted = st.form_submit_button("✨ Genera strategia", type="primary")
+
+        if gen_submitted:
+            if not objective_input.strip():
+                st.error("Inserisci un obiettivo prima di generare la strategia.")
+            else:
+                from competitor_analysis.analysis.strategy_generator import generate_strategy
+
+                with st.spinner("🤖 Elaborazione strategia con Claude…"):
+                    try:
+                        pp = None if priority_platform == "(nessuna preferenza)" else priority_platform
+                        strategy = generate_strategy(
+                            objective=objective_input.strip(),
+                            profile=st.session_state.profile,
+                            competitors=st.session_state.rows,
+                            target_analysis=st.session_state.target_analysis,
+                            timeframe=timeframe,
+                            priority_platform=pp,
+                        )
+                        st.session_state.marketing_strategy = strategy
+                        st.session_state.objective = objective_input.strip()
+
+                        # Persist onto the existing analysis record
+                        if st.session_state.current_analysis_id:
+                            from competitor_analysis.storage.history import load_analysis, save_analysis
+                            record = load_analysis(st.session_state.current_analysis_id)
+                            record = record.model_copy(update={
+                                "objective": objective_input.strip(),
+                                "marketing_strategy": strategy,
+                            })
+                            save_analysis(record)
+
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Errore durante la generazione della strategia: {exc}")
+
+        # Render saved/generated strategy
+        strategy = st.session_state.marketing_strategy
+        if strategy:
+            from competitor_analysis.output.export import strategy_to_markdown
+
+            st.success(f"**Obiettivo:** {strategy.objective}")
+
+            if strategy.summary:
+                st.info(strategy.summary)
+
+            col_pos, col_tgt = st.columns(2)
+            with col_pos:
+                with st.container(border=True):
+                    st.markdown("**📍 Posizionamento**")
+                    st.write(strategy.positioning)
+            with col_tgt:
+                with st.container(border=True):
+                    st.markdown("**🎯 Focus sul target**")
+                    st.write(strategy.target_focus)
+
+            if strategy.differentiation:
+                with st.expander("🔀 Differenziazione vs competitor", expanded=True):
+                    for item in strategy.differentiation:
+                        st.markdown(f"- {item}")
+
+            if strategy.key_messages:
+                with st.expander("💬 Messaggi chiave", expanded=True):
+                    for msg in strategy.key_messages:
+                        st.markdown(f"- {msg}")
+
+            if strategy.content_pillars:
+                st.markdown("#### 📚 Pilastri di contenuto")
+                pillar_cols = st.columns(min(len(strategy.content_pillars), 3))
+                for i, pillar in enumerate(strategy.content_pillars):
+                    with pillar_cols[i % 3]:
+                        with st.container(border=True):
+                            st.markdown(f"**{pillar.title}**")
+                            if pillar.description:
+                                st.caption(pillar.description)
+                            for topic in pillar.sample_topics:
+                                st.markdown(f"• {topic}")
+
+            col_ch, col_act = st.columns(2)
+            with col_ch:
+                if strategy.channel_strategy:
+                    with st.expander("📱 Strategia di canale", expanded=False):
+                        for item in strategy.channel_strategy:
+                            st.markdown(f"- {item}")
+            with col_act:
+                if strategy.recommended_actions:
+                    with st.expander("✅ Azioni raccomandate", expanded=False):
+                        for i, action in enumerate(strategy.recommended_actions, 1):
+                            st.markdown(f"{i}. {action}")
+
+            if strategy.kpis:
+                with st.expander("📊 KPI e metriche di successo", expanded=False):
+                    for kpi in strategy.kpis:
+                        st.markdown(f"- {kpi}")
+
+            if strategy.editorial_plan:
+                st.markdown("#### 📅 Piano editoriale")
+                import pandas as pd
+                plan_data = [
+                    {
+                        "Sett.": item.week,
+                        "Giorno": item.day,
+                        "Piattaforma": item.platform,
+                        "Formato": item.format,
+                        "Pilastro": item.pillar,
+                        "Idea / Hook": item.topic,
+                        "Obiettivo": item.goal,
+                    }
+                    for item in strategy.editorial_plan
+                ]
+                st.dataframe(
+                    pd.DataFrame(plan_data),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            st.download_button(
+                label="⬇️ Download strategia (Markdown)",
+                data=strategy_to_markdown(strategy).encode("utf-8"),
+                file_name="strategia.md",
+                mime="text/markdown",
+                use_container_width=False,
+            )
 
 # ── Empty state ───────────────────────────────────────────────────────────────
 elif not submitted:

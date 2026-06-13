@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from competitor_analysis.models import CompetitorRow
+from competitor_analysis.models import CompetitorRow, MarketingStrategy
 
 _PLATFORMS = ["instagram", "facebook", "linkedin", "youtube", "tiktok"]
 
@@ -45,6 +45,84 @@ def export_csv(rows: list[CompetitorRow], output_path: Path) -> None:
         writer = csv.DictWriter(f, fieldnames=list(flat_rows[0].keys()))
         writer.writeheader()
         writer.writerows(flat_rows)
+
+
+def strategy_to_markdown(strategy: MarketingStrategy) -> str:
+    """Render a MarketingStrategy as a clean Italian Markdown document."""
+    lines: list[str] = [
+        "# Strategia di Marketing",
+        "",
+        f"**Obiettivo:** {strategy.objective}",
+        "",
+    ]
+
+    if strategy.summary:
+        lines += ["## Sintesi strategica", "", strategy.summary, ""]
+
+    if strategy.positioning:
+        lines += ["## Posizionamento", "", strategy.positioning, ""]
+
+    if strategy.differentiation:
+        lines += ["## Differenziazione vs competitor", ""]
+        for item in strategy.differentiation:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    if strategy.target_focus:
+        lines += ["## Focus sul target", "", strategy.target_focus, ""]
+
+    if strategy.key_messages:
+        lines += ["## Messaggi chiave", ""]
+        for msg in strategy.key_messages:
+            lines.append(f"- {msg}")
+        lines.append("")
+
+    if strategy.content_pillars:
+        lines += ["## Pilastri di contenuto", ""]
+        for pillar in strategy.content_pillars:
+            lines.append(f"### {pillar.title}")
+            if pillar.description:
+                lines.append(pillar.description)
+            if pillar.sample_topics:
+                lines.append("")
+                for topic in pillar.sample_topics:
+                    lines.append(f"- {topic}")
+            lines.append("")
+
+    if strategy.channel_strategy:
+        lines += ["## Strategia di canale", ""]
+        for item in strategy.channel_strategy:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    if strategy.recommended_actions:
+        lines += ["## Azioni raccomandate", ""]
+        for i, action in enumerate(strategy.recommended_actions, 1):
+            lines.append(f"{i}. {action}")
+        lines.append("")
+
+    if strategy.kpis:
+        lines += ["## KPI e metriche di successo", ""]
+        for kpi in strategy.kpis:
+            lines.append(f"- {kpi}")
+        lines.append("")
+
+    if strategy.editorial_plan:
+        lines += ["## Piano editoriale", ""]
+        current_week = 0
+        for item in strategy.editorial_plan:
+            if item.week != current_week:
+                current_week = item.week
+                lines += [f"### Settimana {current_week}", ""]
+                lines += ["| Giorno | Piattaforma | Formato | Pilastro | Idea / Hook | Obiettivo |"]
+                lines += ["|--------|-------------|---------|----------|-------------|-----------|"]
+            lines.append(
+                f"| {item.day} | {item.platform} | {item.format} "
+                f"| {item.pillar} | {item.topic} | {item.goal} |"
+            )
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def export_excel(rows: list[CompetitorRow], output_path: Path) -> None:

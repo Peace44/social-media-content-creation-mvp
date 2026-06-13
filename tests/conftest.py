@@ -4,6 +4,7 @@ from competitor_analysis.models import (
     CompetitorKPI,
     CompetitorRow,
     ProfileSummary,
+    TargetAnalysis,
 )
 
 
@@ -56,4 +57,30 @@ def sample_row(sample_candidate: CompetitorCandidate, sample_kpis: CompetitorKPI
         website_and_links=["https://testagency.it"],
         why_competitor=sample_candidate.relevance_reason,
         kpis=sample_kpis,
+    )
+
+
+@pytest.fixture
+def sample_target_analysis() -> TargetAnalysis:
+    return TargetAnalysis(
+        problemi=[
+            "Non riesco ad acquisire clienti tramite i social",
+            "Non so come posizionarmi online",
+            "Non ho tempo per creare contenuti efficaci",
+        ],
+        obiettivi=[
+            "Avere una presenza digitale professionale",
+            "Acquisire almeno 5 nuovi clienti al mese",
+            "Essere riconosciuto come esperto nella mia nicchia",
+        ],
+        dolore=[
+            "Paura di non essere abbastanza visibile",
+            "Frustrazione per il tempo sprecato senza risultati",
+            "Senso di inadeguatezza rispetto ai competitor",
+        ],
+        desideri=[
+            "Lavorare con clienti ideali senza rincorrere",
+            "Avere un metodo chiaro e ripetibile per crescere online",
+            "Sentirsi libero e riconosciuto nel proprio lavoro",
+        ],
     )

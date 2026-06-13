@@ -81,6 +81,36 @@ class TargetAnalysis(BaseModel):
     desideri: list[str] = Field(default_factory=list)
 
 
+class ContentPillar(BaseModel):
+    title: str
+    description: str = ""
+    sample_topics: list[str] = Field(default_factory=list)
+
+
+class EditorialItem(BaseModel):
+    week: int          # 1-4
+    day: str           # "Lunedì", "Mercoledì", etc.
+    platform: str      # "Instagram", "LinkedIn", etc.
+    format: str        # "Reel", "Carosello", "Post", "Storia"
+    pillar: str        # which ContentPillar this maps to
+    topic: str         # concrete idea / hook
+    goal: str = ""     # what it's meant to achieve
+
+
+class MarketingStrategy(BaseModel):
+    objective: str
+    summary: str = ""
+    positioning: str = ""
+    differentiation: list[str] = Field(default_factory=list)
+    target_focus: str = ""
+    key_messages: list[str] = Field(default_factory=list)
+    content_pillars: list[ContentPillar] = Field(default_factory=list)
+    channel_strategy: list[str] = Field(default_factory=list)
+    recommended_actions: list[str] = Field(default_factory=list)
+    kpis: list[str] = Field(default_factory=list)
+    editorial_plan: list[EditorialItem] = Field(default_factory=list)
+
+
 class AnalysisRecord(BaseModel):
     id: str
     created_at: str
@@ -88,3 +118,6 @@ class AnalysisRecord(BaseModel):
     profile: ProfileSummary
     rows: list[CompetitorRow]
     target_analysis: TargetAnalysis | None = None
+    # Optional — populated when the user generates a strategy in a second step
+    objective: str | None = None
+    marketing_strategy: MarketingStrategy | None = None
