@@ -208,7 +208,13 @@ if submitted:
         status.success(f"✅ Analysis complete — {len(rows)} competitors found")
 
         # Save to history
-        url_slug = profile_url.strip().rstrip("/").split("/")[-1][:30]
+        from urllib.parse import urlparse
+        import re as _re
+        _parsed = urlparse(profile_url.strip())
+        # Use only the path segment — drop query string (?locale=...) and fragment
+        url_slug = _parsed.path.rstrip("/").split("/")[-1][:30]
+        # Replace any remaining characters invalid in Windows filenames
+        url_slug = _re.sub(r'[\\/:*?"<>|]', '_', url_slug)
         record_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_{url_slug}"
         record = AnalysisRecord(
             id=record_id,
